@@ -15,6 +15,7 @@ No globbing.
 #include <errno.h>
 #define LSH_RL_BUFSIZE 1024 //a number that corresponds to a physical block size on a peripheral device
 #define LSH_TOK_BUFSIZE 64
+#define LSH_CMD_DELIM "|"
 #define LSH_TOK_DELIM " \t\r\n\a"
 
 void lsh_loop(void);
@@ -29,6 +30,7 @@ int lsh_launch(char **, int);
 int lsh_execute(char **, int);
 void printdir(void);
 int checkpipe(char *);
+char **cmd_arr(char *, int);
 
 char *builtin_str[] = {
     "cd",
@@ -48,7 +50,7 @@ int (*builtin_func[]) (char **) = {
     &lsh_exit
 }; //arr of pointers to functions that return (int) and take in a (char **)
 
-char *cwd = "/"; //root
+char *cwd = "/";
 
 int main(int argc, char **argv) {
     //load config files
@@ -72,7 +74,9 @@ void lsh_loop(void) {
         printf("> "); //a prompt
         line = lsh_read_line();
         numpipes = checkpipe(line);
-        args = lsh_split_line(line);
+        ca = cmd_arr(line, numpipes);
+
+        args = lsh_split_line(ca[0]);
         status = lsh_execute(args, numpipes);
 
         free(line);
@@ -118,6 +122,56 @@ char *lsh_read_line(void) {
             }
         }
     }
+}
+
+char **cmd_arr(char *line, int numpipes) {
+    int bufsize = LSH_TOK_BUFSIZE, position = 0;
+    char **cmdarr = malloc(bufsize * sizeof(char *));
+    char *cmd;
+
+    if (!cmdarr) {
+        fprintf(stderr, "lsh: cmd_arr allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    cmd = strtok(line, LSH_CMD_DELIM);
+
+    while (cmd != NULL) {
+        cmdarr[position] = cmd;
+        position++;
+
+        if (position >= bufsize) {
+            bufsize += LSH_TOK_BUFSIZE;
+            cmdarr = realloc(cmdarr, bufsize * sizeof(char *));
+            if (!cmdarr) {
+                fprintf(stderr, "lsh: cmd_arr re-allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    
+        cmd = strtok(NULL, LSH_CMD_DELIM);
+    }
+
+    cmdarr[position] = NULL;
+
+    int i;
+    for (i = 0; cmdarr[i] != NULL; i++);
+
+    if (i != (numpipes +1)) {
+        printf("CMD_ARR ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
+        for (int i = 0; cmdarr[i] != NULL; i++)
+            printf("%s", cmdarr[i]);
+        printf("\n");
+        exit(EXIT_FAILURE);
+    } /*else {
+        printf("CMD_ARR NON-ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
+        for (int i = 0; cmdarr[i] != NULL; i++)
+            printf("%s (next element)", cmdarr[i]);
+        printf("\n");
+        exit(EXIT_SUCCESS);
+    }*/
+
+    return cmdarr;
 }
 
 /*parse through the line, however there is no quoting or backslash escaping from the cl
@@ -206,12 +260,11 @@ int lsh_launch(char **args, int numpipe) {
         //return 1;
         /*signal to the claling function that we should prompt for input again*/
     } else if (numpipe == 1) {
-        printf("%d pipes\n", numpipe);
-        exit(EXIT_FAILURE);
+        //code for one pipe
+        printf("%d pipe (one pipe)\n", numpipe);
     } else if (numpipe >= 2) {
         //code for pipe pipes
-        printf("%d pipes\n", numpipe);
-        exit(EXIT_FAILURE);
+        printf("%d pipes (many pipes)\n", numpipe);
     }
 
     return 1;
