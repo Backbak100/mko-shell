@@ -1,10 +1,13 @@
 /*Only whitespace separating arguments, no quoting or backslash escaping.
-No piping or redirection.
+No piping <- FIXED
+or redirection.
 Few standard builtins.
 No globbing.
 */
 
 //Cleanup code after piping is added
+
+//ALL MY VERSIONS - VERY BROKEN
 
 #include <sys/wait.h>
 #include <sys/types.h>
@@ -24,6 +27,7 @@ char **lsh_split_line(char *);
 int lsh_cd(char **);
 int lsh_help(char **);
 int lsh_exit(char **);
+int memory_print(char **);
 int lsh_num_builtins(void);
 int lsh_num_problems(void);
 int lsh_launch(char **, int);
@@ -33,24 +37,44 @@ int checkpipe(char *);
 char **cmd_arr(char *, int);
 char **copy_cmdarr(char **);
 
+//MEM FUNCTIONS
+struct cmd_mem *addmem(struct cmd_mem *, char *);
+struct cmd_mem *findmem(struct cmd_mem *, int);
+struct cmd_mem *uppressed(struct cmd_mem *, int);
+void printmem(struct cmd_mem *);
+
+
+struct cmd_mem {
+    char *command;
+    struct cmd_mem *nxt_cmd;
+};
+
+struct cmd_mem *mem;
+
 char *builtin_str[] = {
     "cd",
     "help",
-    "exit"
+    "exit",
+    "memory"
 };
 
 char *issues[] = {
-    "Only whitespace separating arguments, no quoting or backslash escaping.",
-    "Few standard builtins."
+    "Only whitespace separating arguments",
+    "No quoting or backslash escaping",
+    "No redirection",
+    "Few standard builtins.",
+    "No up-arrow command memory"
 };
 
 int (*builtin_func[]) (char **) = {
     &lsh_cd,
     &lsh_help,
-    &lsh_exit
+    &lsh_exit,
+    &memory_print
 }; //arr of pointers to functions that return (int) and take in a (char **)
 
 char *cwd = "/"; //root
+int struct_count = 0;
 
 int main(int argc, char **argv) {
     //load config files
@@ -65,7 +89,7 @@ int main(int argc, char **argv) {
 
 //What a shell does: read, seperate/parse, execute
 void lsh_loop(void) {
-    char *line, *string;
+    char *line, *string, *struct_line_copy;
     char **args, **ca, **cca;
     int status, numpipes;
 
@@ -74,6 +98,8 @@ void lsh_loop(void) {
         printf("> "); //a prompt
         line = lsh_read_line();
         string = strdup(line);
+        struct_line_copy = strdup(line);
+        mem = addmem(mem, struct_line_copy);
         numpipes = checkpipe(line);
         ca = cmd_arr(string, numpipes);
         //printf("numpipes = %d\n", numpipes);
@@ -463,6 +489,17 @@ char **copy_cmdarr(char **cmdarr) {
     return copy;
 }
 
+int memory_print(char **args) {
+    printf("printing memory\n\n");
+    printmem(mem);
+    printf("\nfound all memory\n");
+
+    /*int num;
+    if (args[1] == NULL) fprintf(stderr, "lsh: expected argument to \"memory\"\n");
+    else if (sscanf(args[1], "%d", &num) != 1) fprintf(stderr, "lsh: error converting %s to int\n", args[1]);
+    else printf("%s\n", findmem(mem, num)->command);*/
+    return 1;
+}
 
 /*Builtin function implementations*/
 
@@ -491,3 +528,59 @@ int lsh_exit(char **args) {
 }
 
 /*End of builtin functions*/
+
+
+/*Start of memory functions:
+
+struct cmd_mem *addmem(struct cmd_mem *, char *);
+struct cmd_mem *findmem(struct cmd_mem *, int);
+struct cmd_mem *uppressed(struct cmd_mem *, int); */
+
+struct cmd_mem *addmem(struct cmd_mem *p, char *w) {
+    if (p == NULL) {
+        p = malloc(sizeof(struct cmd_mem));
+        p->command = strdup(w);
+        p->nxt_cmd = NULL;
+        struct_count++;
+        uppressed(NULL, -1);
+    } else p->nxt_cmd = addmem(p->nxt_cmd, w);
+
+    return p;
+} //SHOULD add an "element" to p
+
+struct cmd_mem *findmem(struct cmd_mem *p, int i) {
+    static int count = 0;
+    if (count == i) {
+        count = 0;
+        return p;
+    }
+    else {
+        count++;
+        return findmem(p->nxt_cmd, i);
+    }
+} //SHOULD return a pointer i "elements" in p
+
+struct cmd_mem *uppressed(struct cmd_mem *p, int status) {
+    static int not = 0;
+    if (status == -1) {
+        not = 0;
+        return p;
+    }
+    else {
+        not++;
+        return findmem(p, struct_count-not);
+    }
+} //may have a fencepost error thing
+
+void printmem(struct cmd_mem *p) {
+    if (p->nxt_cmd == NULL) {
+        //printf("nxt_cmd is NULL\n");
+        return;
+    }
+    else {
+        printf("%s\n", p->command);
+        printmem(p->nxt_cmd);
+    }
+}
+
+/*End of memory functions*/
