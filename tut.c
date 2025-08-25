@@ -7,7 +7,7 @@ No globbing.
 
 //Cleanup code after piping is added
 
-//ALL MY VERSIONS - VERY BROKEN
+//Remove spec_mem / smem
 
 #include <sys/wait.h>
 #include <sys/types.h>
@@ -16,10 +16,16 @@ No globbing.
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
+
+#include "ctrlcesp.c"
+
 #define LSH_RL_BUFSIZE 1024 //a number that corresponds to a physical block size on a peripheral device
 #define LSH_TOK_BUFSIZE 64
 #define LSH_CMD_DELIM "|"
 #define LSH_TOK_DELIM " \t\r\n\a"
+#define AUPPRES -1
+#define PUPPRES 1
 
 void lsh_loop(void);
 char *lsh_read_line(void);
@@ -28,6 +34,7 @@ int lsh_cd(char **);
 int lsh_help(char **);
 int lsh_exit(char **);
 int memory_print(char **);
+int spec_mem(char **);
 int lsh_num_builtins(void);
 int lsh_num_problems(void);
 int lsh_launch(char **, int);
@@ -43,6 +50,8 @@ struct cmd_mem *findmem(struct cmd_mem *, int);
 struct cmd_mem *uppressed(struct cmd_mem *, int);
 void printmem(struct cmd_mem *);
 
+void my_sig_handler(int);
+
 
 struct cmd_mem {
     char *command;
@@ -55,7 +64,8 @@ char *builtin_str[] = {
     "cd",
     "help",
     "exit",
-    "memory"
+    "memory",
+    "smem"
 };
 
 char *issues[] = {
@@ -70,11 +80,13 @@ int (*builtin_func[]) (char **) = {
     &lsh_cd,
     &lsh_help,
     &lsh_exit,
-    &memory_print
+    &memory_print,
+    &spec_mem
 }; //arr of pointers to functions that return (int) and take in a (char **)
 
 char *cwd = "/"; //root
 int struct_count = 0;
+int whilel = 0;
 
 int main(int argc, char **argv) {
     //load config files
@@ -86,32 +98,43 @@ int main(int argc, char **argv) {
     return EXIT_SUCCESS;
 }
 
-
 //What a shell does: read, seperate/parse, execute
 void lsh_loop(void) {
     char *line, *string, *struct_line_copy;
     char **args, **ca, **cca;
     int status, numpipes;
 
+    struct sigaction sa;
+    sa.sa_handler = my_sig_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    //change this into a function?
+
     do {
         printdir();
-        printf("> "); //a prompt
+        fflush(stdout);
+        big_sig_handler(sa);
+        //sleep(30);
+        //if (whilel) {whilel = 0; printf("\n"); continue;}
+        charwrite("> ", KEEP);
         line = lsh_read_line();
         string = strdup(line);
         struct_line_copy = strdup(line);
         mem = addmem(mem, struct_line_copy);
         numpipes = checkpipe(line);
         ca = cmd_arr(string, numpipes);
+        if (!ca) continue;
         //printf("numpipes = %d\n", numpipes);
         status = lsh_execute(ca, numpipes);
-
+        
         /*printf("end of lsh_loop ca = ");
         for (int i = 0; ca[i] != NULL; i++)
-            printf("%s\t", ca[i]);
+        printf("%s\t", ca[i]);
         printf("\n\n");*/
 
         free(line);
         free(ca);
+        whilel = 0;
         //free(args);
     } while (status);
 }
@@ -190,11 +213,12 @@ char **cmd_arr(char *line, int numpipes) {
     for (i = 0; cmdarr[i] != NULL; i++);
 
     if (i != (numpipes +1)) {
-        printf("CMD_ARR ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
-        /*for (int i = 0; cmdarr[i] != NULL; i++)
+        /*printf("CMD_ARR ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
+        for (int i = 0; cmdarr[i] != NULL; i++)
             printf("%s", cmdarr[i]);
-        printf("\n");*/
-        exit(EXIT_FAILURE);
+        printf("\n");
+        exit(EXIT_FAILURE);*/
+        return NULL;
     } /*else {
         printf("CMD_ARR NON-ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
         for (int i = 0; cmdarr[i] != NULL; i++)
@@ -444,7 +468,7 @@ int lsh_execute(char **cmdarr, int numpipes) {
 void printdir(void) {
     int bufsize = LSH_RL_BUFSIZE;
     char *cwd = NULL;
-    for (;;) {
+    while (1) {
         cwd = malloc(bufsize);
         if (!cwd) {
             perror("lsh");
@@ -456,7 +480,8 @@ void printdir(void) {
         free(cwd);
         bufsize += LSH_RL_BUFSIZE;
     }
-    printf("%s", cwd);
+    //printf("%s", cwd);
+    charwrite(cwd, KEEP);
 }
 
 char **copy_cmdarr(char **cmdarr) {
@@ -489,6 +514,8 @@ char **copy_cmdarr(char **cmdarr) {
     return copy;
 }
 
+/*Builtin function implementations*/
+
 int memory_print(char **args) {
     printf("printing memory\n\n");
     printmem(mem);
@@ -501,7 +528,18 @@ int memory_print(char **args) {
     return 1;
 }
 
-/*Builtin function implementations*/
+int spec_mem(char **args) {
+    int n;
+    if (args[1] == NULL)
+        fprintf(stderr, "lsh: expected argument to \"specmem\"\n");
+    else if ((sscanf(args[1], "%d", &n)) != 1)
+        fprintf(stderr, "lsh: error converting \"%s\" to int", args[1]);
+    else
+        for (int i = 0; i < n; i++)
+            uppressed(mem, PUPPRES);
+        printf("%s\n", uppressed(mem, PUPPRES)->command);
+    return 1;
+}
 
 int lsh_cd(char **args) {
     if (args[1] == NULL)
@@ -542,7 +580,7 @@ struct cmd_mem *addmem(struct cmd_mem *p, char *w) {
         p->command = strdup(w);
         p->nxt_cmd = NULL;
         struct_count++;
-        uppressed(NULL, -1);
+        uppressed(NULL, AUPPRES);
     } else p->nxt_cmd = addmem(p->nxt_cmd, w);
 
     return p;
@@ -562,7 +600,7 @@ struct cmd_mem *findmem(struct cmd_mem *p, int i) {
 
 struct cmd_mem *uppressed(struct cmd_mem *p, int status) {
     static int not = 0;
-    if (status == -1) {
+    if (status == AUPPRES) {
         not = 0;
         return p;
     }
@@ -571,6 +609,7 @@ struct cmd_mem *uppressed(struct cmd_mem *p, int status) {
         return findmem(p, struct_count-not);
     }
 } //may have a fencepost error thing
+//works?
 
 void printmem(struct cmd_mem *p) {
     if (p->nxt_cmd == NULL) {
@@ -584,3 +623,34 @@ void printmem(struct cmd_mem *p) {
 }
 
 /*End of memory functions*/
+
+void my_sig_handler(int sig) {
+    /*char *str;
+    sprintf(str, "sig_handler( %d ) called for ", sig);
+    charwrite(str, DELETE);*/
+    switch (sig) {
+        case SIGINT:
+            charwrite("", DELETE);
+            printdir();
+            charwrite("> SIGQUIT\n", KEEP);
+            printdir();
+            charwrite("> ", KEEP);
+            fflush(stdout);
+            whilel = 1;
+            break;
+        case SIGTSTP:
+            charwrite("", DELETE);
+            printdir();
+            charwrite("> ", KEEP); 
+            fflush(stdout);
+            whilel = 1;
+            break;
+        case SIGQUIT:
+            charwrite("", DELETE);
+            printdir();
+            charwrite("> ", KEEP); 
+            fflush(stdout);
+            whilel = 1;
+            break;
+    }
+}
