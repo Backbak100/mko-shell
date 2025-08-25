@@ -4,9 +4,7 @@ Few standard builtins.
 No globbing.
 */
 
-//Cleanup code after piping is added
-
-//ALL MY VERSIONS
+//THE ORIGINAL
 
 #include <sys/wait.h>
 #include <sys/types.h>
@@ -17,10 +15,7 @@ No globbing.
 #include <errno.h>
 #define LSH_RL_BUFSIZE 1024 //a number that corresponds to a physical block size on a peripheral device
 #define LSH_TOK_BUFSIZE 64
-#define LSH_CMD_DELIM "|"
 #define LSH_TOK_DELIM " \t\r\n\a"
-#define AUPPRES -1 //reset uppress() int not to 0
-#define PUPPRES 1 //make uppress() run fully
 
 void lsh_loop(void);
 char *lsh_read_line(void);
@@ -28,56 +23,32 @@ char **lsh_split_line(char *);
 int lsh_cd(char **);
 int lsh_help(char **);
 int lsh_exit(char **);
-int memory_print(char **);
-int spec_mem(char **);
 int lsh_num_builtins(void);
 int lsh_num_problems(void);
 int lsh_launch(char **, int);
 int lsh_execute(char **, int);
 void printdir(void);
 int checkpipe(char *);
-char **cmd_arr(char *, int);
-char **copy_cmdarr(char **);
-
-//MEM FUNCTIONS
-struct cmd_mem *addmem(struct cmd_mem *, char *);
-struct cmd_mem *findmem(struct cmd_mem *, int);
-struct cmd_mem *uppressed(struct cmd_mem *, int);
-void printmem(struct cmd_mem *);
-
-struct cmd_mem {
-    char *command;
-    struct cmd_mem *nxt_cmd;
-};
-
-struct cmd_mem *mem;
 
 char *builtin_str[] = {
     "cd",
     "help",
-    "exit",
-    "memory",
-    "smem"
+    "exit"
 };
 
 char *issues[] = {
-    "Only whitespace separating arguments",
-    "No quoting or backslash escaping",
-    "No redirection",
-    "Few standard builtins.",
-    "No up-arrow command memory"
+    "Only whitespace separating arguments, no quoting or backslash escaping.",
+    "No piping or redirection.",
+    "Few standard builtins."
 };
 
 int (*builtin_func[]) (char **) = {
     &lsh_cd,
     &lsh_help,
-    &lsh_exit,
-    &memory_print,
-    &spec_mem
+    &lsh_exit
 }; //arr of pointers to functions that return (int) and take in a (char **)
 
 char *cwd = "/"; //root
-int struct_count = 0;
 
 int main(int argc, char **argv) {
     //load config files
@@ -92,31 +63,21 @@ int main(int argc, char **argv) {
 
 //What a shell does: read, seperate/parse, execute
 void lsh_loop(void) {
-    char *line, *string, *struct_line_copy;
-    char **args, **ca, **cca;
+    char *line, *line_copy;
+    char **args, **ca;
     int status, numpipes;
 
     do {
         printdir();
         printf("> "); //a prompt
         line = lsh_read_line();
-        string = strdup(line);
-        struct_line_copy = strdup(line);
-        mem = addmem(mem, struct_line_copy);
+        line_copy = strdup(line);
         numpipes = checkpipe(line);
-        ca = cmd_arr(string, numpipes);
-        if (!ca) continue;
-        //printf("numpipes = %d\n", numpipes);
-        status = lsh_execute(ca, numpipes);
-        
-        /*printf("end of lsh_loop ca = ");
-        for (int i = 0; ca[i] != NULL; i++)
-        printf("%s\t", ca[i]);
-        printf("\n\n");*/
+        args = lsh_split_line(line_copy);
+        status = lsh_execute(args, numpipes);
 
         free(line);
-        free(ca);
-        //free(args);
+        free(args);
     } while (status);
 }
 //line is a string, args is a string arr -> status is a value of 1 if successful?
@@ -158,56 +119,6 @@ char *lsh_read_line(void) {
             }
         }
     }
-}
-
-char **cmd_arr(char *line, int numpipes) {
-    int bufsize = LSH_TOK_BUFSIZE, position = 0;
-    char **cmdarr = malloc(bufsize * sizeof(char *));
-    char *cmd;
-
-    if (!cmdarr) {
-        fprintf(stderr, "lsh: cmd_arr allocation error\n");
-        exit(EXIT_FAILURE);
-    }
-
-    cmd = strtok(line, LSH_CMD_DELIM);
-
-    while (cmd != NULL) {
-        cmdarr[position] = cmd;
-        position++;
-
-        if (position >= bufsize) {
-            bufsize += LSH_TOK_BUFSIZE;
-            cmdarr = realloc(cmdarr, bufsize * sizeof(char *));
-            if (!cmdarr) {
-                fprintf(stderr, "lsh: cmd_arr re-allocation error\n");
-                exit(EXIT_FAILURE);
-            }
-        }
-    
-        cmd = strtok(NULL, LSH_CMD_DELIM);
-    }
-
-    cmdarr[position] = NULL;
-
-    int i;
-    for (i = 0; cmdarr[i] != NULL; i++);
-
-    if (i != (numpipes +1)) {
-        printf("CMD_ARR ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
-        /*for (int i = 0; cmdarr[i] != NULL; i++)
-            printf("%s", cmdarr[i]);
-        printf("\n");*/
-        exit(EXIT_FAILURE);
-    } /*else {
-        printf("CMD_ARR NON-ISSUE:\nnumpipes = %d\ncmdarr length/i = %d\ncmdarr = ", numpipes, i);
-        for (int i = 0; cmdarr[i] != NULL; i++)
-            printf("%s (next element)", cmdarr[i]);
-        printf("\n");
-        exit(EXIT_SUCCESS);
-    }*/
-
-    return cmdarr;
 }
 
 /*parse through the line, however there is no quoting or backslash escaping from the cl
@@ -259,31 +170,16 @@ int checkpipe(char *line) {
     return k;
 }
 
-int lsh_launch(char **cmdarr, int numpipe) {
+int lsh_launch(char **args, int numpipe) {
     pid_t pid, wpid;
     int status;
-    char **args;
 
-    if (numpipe == 0) { //numpipe == 0
-        args = lsh_split_line(cmdarr[0]);
-
-        /*printf("\nnumpipes = %d\ncmdarr =", numpipe);
-        for (int i = 0; cmdarr[i] != NULL; i++)
-            printf("%s ", cmdarr[i]);
-        printf("\nargs =");
-        for (int i = 0; args[i] != NULL; i++)
-            printf("%s ", args[i]);
-        printf("\n");*/
-
+    if (!numpipe) { //numpipe == 0
         pid = fork(); //lsh_launch is copied, and the PID of the child process is returned to pid, (in the child, the pid is 0)
         /*(pid == 0) you are the child
         (pid > 0) you are the parent, and you know the childs PID
         (pid < 0) fork() failed and no child was created*/
 
-        /*for (int i = 0; args[i] != NULL; i++)
-            printf("%s ", args[i]);
-        printf("\n");*/
-        
         if (pid == 0) {
             if (execvp(args[0], args) == -1)
                 //exec vp runs args[0] by letting the OS search the PATH, passes the arg list to the new progrm, it returns -1 if theres an error
@@ -308,106 +204,15 @@ int lsh_launch(char **cmdarr, int numpipe) {
             therefore: the loop continues so long as the child has NOT exited and NOT signaled to terminate*/
         }
 
-        return 1;
+        //return 1;
         /*signal to the claling function that we should prompt for input again*/
     } else if (numpipe == 1) {
-        //printf("%d pipe (one pipe)\n", numpipe);
-
-        pid_t pid2;
-        int fd[2];
-        pipe(fd);
-
-        pid = fork();
-        
-        if (pid == 0) { //child process
-            args = lsh_split_line(cmdarr[0]);
-            dup2(fd[1], STDOUT_FILENO);  // stdout -> write end of pipe
-            close(fd[0]);                // not needed
-            close(fd[1]);                // close original after dup2
-            if (execvp(args[0], args) == -1) /*if execvp was successful then 136+ will never be read*/ {
-                perror("lsh");
-                exit(1);
-            }
-            
-        } else if (pid < 0){
-            //forking error
-            perror("lsh");
-            exit(1);
-        }
-
-        pid2 = fork();
-
-        if (pid2 == 0) { //child process for pid2
-            args = lsh_split_line(cmdarr[1]);
-            dup2(fd[0], STDIN_FILENO);  // stdout -> write end of pipe
-            close(fd[1]);                // not needed
-            close(fd[0]);                // close original after dup2
-            if (execvp(args[0], args) == -1) //if execvp was successful then 136+ will never be read
-                perror("lsh");
-            
-        } else if (pid2 < 0) {
-            //forking error
-            perror("lsh");
-            exit(1);
-        }
-
-        /*
-        //parent process
-        do {
-            wpid = waitpid(pid, &status, WUNTRACED); //suspends the parent process until the child (found with the pid - first arg) is done
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-            //while the child is still running*/
-        
-        close(fd[0]);
-        close(fd[1]);
-        waitpid(pid, NULL, 0);
-        waitpid(pid2, NULL, 0);
-            
-
-
+        printf("%d pipes\n", numpipe);
+        exit(EXIT_FAILURE);
     } else if (numpipe >= 2) {
-        int numcmds = numpipe + 1;
-        int fd[2 * numpipe];
-
-        for (int i = 0; i < numpipe; i++)
-            if (pipe(fd + i*2) == -1) {
-                fprintf(stderr, "lsh: pipe read/write ends error\n");
-                exit(1);
-            }
-        
-        for (int i = 0; i < numcmds; i++) {
-            pid = fork();
-
-            if (pid == 0) {
-                if (i != 0)
-                    dup2(fd[(i-1)*2], STDIN_FILENO);
-            
-                if (i != numcmds - 1)
-                    dup2(fd[i*2+1], STDOUT_FILENO);
-                
-                for (int j = 0; j < 2 * numpipe; j++) {
-                    close(fd[j]);
-                }  
-
-                args = lsh_split_line(cmdarr[i]);
-                if (execvp(args[0], args) == -1) {
-                    perror("execvp");
-                    exit(1);
-                }
-
-            }
-
-        }
-
-        // PARENT closes all pipe fds
-        for (int i = 0; i < 2 * numpipe; i++) {
-            close(fd[i]);
-        }
-
-        // Wait for all children
-        for (int i = 0; i < numcmds; i++) {
-            wait(NULL);
-        }
+        //code for pipe pipes
+        printf("%d pipes\n", numpipe);
+        exit(EXIT_FAILURE);
     }
 
     return 1;
@@ -421,15 +226,7 @@ int lsh_num_problems(void) {
     return sizeof(issues) / sizeof(char*);
 }
 
-int lsh_execute(char **cmdarr, int numpipes) {
-    char **orig_cmdarr = copy_cmdarr(cmdarr);
-
-    /*for (int i = 0; orig_cmdarr[i] != NULL; i++)
-        printf("%s\t", orig_cmdarr[i]);*/
-    
-    char **args;
-    args = lsh_split_line(cmdarr[0]);
-        //printf("split");
+int lsh_execute(char **args, int numpipes) {
     if (args[0] == NULL)
         return 0;
     
@@ -438,11 +235,8 @@ int lsh_execute(char **cmdarr, int numpipes) {
             return (*builtin_func[i]) (args); /*return, ends function
             (*builtin_func[i]) (args) runs ith function in builtin_func[] with (args) 
             as the arguments passed to the function*/
-    /*printf("cmdarr = ");
-    for(int i = 0; cmdarr[i-1] != NULL; i++)
-        printf("%s\t", cmdarr[i]);
-    printf("\n\nDONE\n");*/
-    return lsh_launch(orig_cmdarr, numpipes); //if it doesnt match a builtin function it'll check the os
+
+    return lsh_launch(args, numpipes); //if it doesnt match a builtin function it'll check the os
 }
 
 void printdir(void) {
@@ -462,37 +256,6 @@ void printdir(void) {
     }
     printf("%s", cwd);
 }
-
-char **copy_cmdarr(char **cmdarr) {
-    int count = 0;
-
-    // Count number of strings
-    while (cmdarr[count] != NULL) {
-        count++;
-    }
-
-    // Allocate memory for the array of pointers (+1 for NULL terminator)
-    char **copy = malloc((count + 1) * sizeof(char *));
-    if (!copy) return NULL;
-
-    // Duplicate each string
-    for (int i = 0; i < count; i++) {
-        copy[i] = strdup(cmdarr[i]);
-        if (!copy[i]) {
-            // handle allocation failure: free previously allocated strings
-            for (int j = 0; j < i; j++)
-                free(copy[j]);
-            free(copy);
-            return NULL;
-        }
-    }
-
-    // NULL-terminate the array
-    copy[count] = NULL;
-
-    return copy;
-}
-
 
 /*Builtin function implementations*/
 
@@ -516,89 +279,8 @@ int lsh_help(char **args) {
 }
 
 int lsh_exit(char **args) {
-    //return 0; //not exit(0) or exit(EXIT_SUCCESS)?
-    exit(0);
-}
-
-int memory_print(char **args) {
-    printf("printing memory\n\n");
-    printmem(mem);
-    printf("\nfound all memory\n");
-
-    /*int num;
-    if (args[1] == NULL) fprintf(stderr, "lsh: expected argument to \"memory\"\n");
-    else if (sscanf(args[1], "%d", &num) != 1) fprintf(stderr, "lsh: error converting %s to int\n", args[1]);
-    else printf("%s\n", findmem(mem, num)->command);*/
-    return 1;
-}
-
-int spec_mem(char **args) {
-    int n;
-    if (args[1] == NULL)
-        fprintf(stderr, "lsh: expected argument to \"specmem\"\n");
-    else if ((sscanf(args[1], "%d", &n)) != 1)
-        fprintf(stderr, "lsh: error converting \"%s\" to int", args[1]);
-    else
-        for (int i = 0; i < n; i++)
-            uppressed(mem, PUPPRES);
-        printf("%s\n", uppressed(mem, PUPPRES)->command);
-    return 1;
+    return 0; //not exit(0) or exit(EXIT_SUCCESS)?
+    //exit(0);
 }
 
 /*End of builtin functions*/
-
-/*Start of memory functions:
-
-struct cmd_mem *addmem(struct cmd_mem *, char *);
-struct cmd_mem *findmem(struct cmd_mem *, int);
-struct cmd_mem *uppressed(struct cmd_mem *, int); */
-
-struct cmd_mem *addmem(struct cmd_mem *p, char *w) {
-    if (p == NULL) {
-        p = malloc(sizeof(struct cmd_mem));
-        p->command = strdup(w);
-        p->nxt_cmd = NULL;
-        struct_count++;
-        uppressed(NULL, AUPPRES);
-    } else p->nxt_cmd = addmem(p->nxt_cmd, w);
-
-    return p;
-} //SHOULD add an "element" to p
-
-struct cmd_mem *findmem(struct cmd_mem *p, int i) {
-    static int count = 0;
-    if (count == i) {
-        count = 0;
-        return p;
-    }
-    else {
-        count++;
-        return findmem(p->nxt_cmd, i);
-    }
-} //SHOULD return a pointer i "elements" in p
-
-struct cmd_mem *uppressed(struct cmd_mem *p, int status) {
-    static int not = 0;
-    if (status == AUPPRES) {
-        not = 0;
-        return p;
-    }
-    else {
-        not++;
-        return findmem(p, struct_count-not);
-    }
-} //may have a fencepost error thing
-//works?
-
-void printmem(struct cmd_mem *p) {
-    if (p->nxt_cmd == NULL) {
-        //printf("nxt_cmd is NULL\n");
-        return;
-    }
-    else {
-        printf("%s\n", p->command);
-        printmem(p->nxt_cmd);
-    }
-}
-
-/*End of memory functions*/
