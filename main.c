@@ -1,5 +1,3 @@
-/*a newline alone ends the code- similar to EOF/^D*/
-
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -124,8 +122,6 @@ void lsh_loop(void) {
 
         free(line);
         free(ca);
-        //whilel = 0;
-        //free(args);
     } while (status);
 }
 
@@ -141,10 +137,13 @@ char *lsh_read_line(void) {
     }
 
     while (1) {
-        if ((c = getchar()) == EOF || c == '\n') {
+        if ((c = getchar()) == EOF)
+            exit(EXIT_SUCCESS);
+        else if (c == '\n') {
             buffer[position] = '\0';
             return buffer;
-        } else
+        }
+        else
             buffer[position] = c;
         position++;
 
@@ -329,8 +328,9 @@ int lsh_execute(char **cmdarr, int numpipes) {
     
     char **args;
     args = lsh_split_line(cmdarr[0]);
+
     if (args[0] == NULL)
-        return 0;
+        return 1;
     
     for (int i = 0; i < lsh_num_builtins(); i++)
         if (strcmp(args[0], builtin_str[i]) == 0)
@@ -432,7 +432,6 @@ int lsh_help(char **args) {
 }
 
 int lsh_exit(char **args) {
-    //return 0; //not exit(0) or exit(EXIT_SUCCESS)?
     exit(0);
 }
 
@@ -549,15 +548,6 @@ void sig_handler(int sig) {
     sprintf(str, "sig_handler( %d ) called for ", sig);
     charwrite(str, DELETE);
     switch (sig) {
-        /*case SIGINT:
-            charwrite("SIGINT\n", KEEP);
-            break;
-        case SIGTSTP:
-            charwrite("SIGTSTP\n", KEEP);
-            break;
-        case SIGQUIT:
-            charwrite("SIGQUIT\n", KEEP);
-            break;*/
         default:
             charwrite("UNKNOWN\n", KEEP);
             break;
