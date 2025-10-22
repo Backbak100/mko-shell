@@ -19,13 +19,6 @@
 void lsh_loop(void);
 char *lsh_read_line(void);
 char **lsh_split_line(char *);
-int lsh_cd(char **);
-int lsh_help(char **);
-int lsh_exit(char **);
-int memory_print(char **);
-int spec_mem(char **);
-int lsh_num_builtins(void);
-int lsh_num_problems(void);
 int lsh_launch(char **, int);
 int lsh_execute(char **, int);
 void printdir(void);
@@ -33,7 +26,18 @@ int checkpipe(char *);
 char **cmd_arr(char *, int);
 char **copy_cmdarr(char **);
 
-//MEM FUNCTIONS
+//builtins
+int lsh_cd(char **);
+int lsh_help(char **);
+int lsh_exit(char **);
+int memory_print(char **);
+int spec_mem(char **);
+int my_shell(char **);
+
+int lsh_num_builtins(void);
+int lsh_num_problems(void);
+
+//mem func
 struct cmd_mem *addmem(struct cmd_mem *, char *);
 struct cmd_mem *findmem(struct cmd_mem *, int);
 struct cmd_mem *uppressed(struct cmd_mem *, int);
@@ -44,8 +48,6 @@ void my_sig_handler(int);
 void big_sig_handler(struct sigaction);
 void sig_handler(int);
 void charwrite(char *, int);
-struct sigaction sa_init(struct sigaction);
-void sig_handler(int);
 
 struct cmd_mem {
     char *command;
@@ -59,7 +61,8 @@ char *builtin_str[] = {
     "help",
     "exit",
     "memory",
-    "smem"
+    "smem",
+    "mihika"
 };
 
 char *issues[] = {
@@ -75,7 +78,8 @@ int (*builtin_func[]) (char **) = {
     &lsh_help,
     &lsh_exit,
     &memory_print,
-    &spec_mem
+    &spec_mem,
+    &my_shell
 };
 
 char *cwd = "/"; //root
@@ -88,7 +92,7 @@ int main(int argc, char **argv) {
     //load config files
 
     lsh_loop();
-
+    
     //run shutdown/cleanup
 
     return EXIT_SUCCESS;
@@ -432,8 +436,12 @@ int lsh_help(char **args) {
 }
 
 int lsh_exit(char **args) {
-    //return 0; //not exit(0) or exit(EXIT_SUCCESS)?
-    exit(0);
+    return 0;
+}
+
+int my_shell(char **args) {
+    printf("Mihikas shell!!!!!! :D\n");
+    return 1;
 }
 
 /*End of builtin functions*/
@@ -475,7 +483,7 @@ struct cmd_mem *uppressed(struct cmd_mem *p, int status) {
         return findmem(p, struct_count-not);
     }
 } //may have a fencepost error thing
-//does not work when up arrow is pressed- but is used in other mem functions
+//does not work when up arrow is pressed- but is used in addmem()
 
 void printmem(struct cmd_mem *p) {
     if (p->nxt_cmd == NULL) {
@@ -491,12 +499,6 @@ void printmem(struct cmd_mem *p) {
 
 /*CTRL-C Work*/
 
-void big_sig_handler(struct sigaction sa) {
-    for (int i = 0; i < NSIG; i++)
-        sigaction(i, &sa, NULL);
-}
-
-
 void charwrite(char *string, int status) {
     if (status == DELETE)
         write(1, "\r\e[2K", 6);
@@ -509,11 +511,9 @@ void charwrite(char *string, int status) {
 
 }
 
-struct sigaction sa_init(struct sigaction sa) {
-    sa.sa_handler = sig_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    return sa;
+void big_sig_handler(struct sigaction sa) {
+    for (int i = 0; i < NSIG; i++)
+        sigaction(i, &sa, NULL);
 }
 
 void my_sig_handler(int sig) {
@@ -540,26 +540,6 @@ void my_sig_handler(int sig) {
             charwrite("> ", KEEP); 
             fflush(stdout);
             whilel = 1;
-            break;
-    }
-}
-
-void sig_handler(int sig) {
-    char *str;
-    sprintf(str, "sig_handler( %d ) called for ", sig);
-    charwrite(str, DELETE);
-    switch (sig) {
-        /*case SIGINT:
-            charwrite("SIGINT\n", KEEP);
-            break;
-        case SIGTSTP:
-            charwrite("SIGTSTP\n", KEEP);
-            break;
-        case SIGQUIT:
-            charwrite("SIGQUIT\n", KEEP);
-            break;*/
-        default:
-            charwrite("UNKNOWN\n", KEEP);
             break;
     }
 }
