@@ -257,9 +257,9 @@ int lsh_launch(char **cmdarr, int numpipe) {
         else {
             //parent process
             do {
-                wpid = waitpid(pid, &status, WUNTRACED); //suspends the parent process until the child is done
+                wpid = waitpid(pid, &status, WUNTRACED); //suspends the parent process until the child is terminated
                 
-            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status)); //while condition checks child processes status
         }
 
         return 1;
@@ -432,6 +432,7 @@ int lsh_help(char **args) {
 }
 
 int lsh_exit(char **args) {
+    //return 0; //not exit(0) or exit(EXIT_SUCCESS)?
     exit(0);
 }
 
@@ -548,6 +549,15 @@ void sig_handler(int sig) {
     sprintf(str, "sig_handler( %d ) called for ", sig);
     charwrite(str, DELETE);
     switch (sig) {
+        /*case SIGINT:
+            charwrite("SIGINT\n", KEEP);
+            break;
+        case SIGTSTP:
+            charwrite("SIGTSTP\n", KEEP);
+            break;
+        case SIGQUIT:
+            charwrite("SIGQUIT\n", KEEP);
+            break;*/
         default:
             charwrite("UNKNOWN\n", KEEP);
             break;
